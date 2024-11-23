@@ -1,42 +1,10 @@
 import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
 import java.awt.*;
+import java.util.*;
 import java.util.List;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.util.*;
-
-class Estado {
-    String nombre;
-    Map<String, String> transiciones = new HashMap<>();
-
-    Estado(String nombre) {
-        this.nombre = nombre;
-    }
-
-    void agregarTransicion(String simbolo, String destino) {
-        transiciones.put(simbolo, destino);
-    }
-
-    String obtenerTransicion(String simbolo) {
-        return transiciones.getOrDefault(simbolo, "VACIO");
-    }
-}
-
-class Automata {
-    Set<String> alfabeto = new HashSet<>();
-    Map<String, Estado> estados = new HashMap<>();
-    String estadoInicial;
-    Set<String> estadosAceptacion = new HashSet<>();
-
-    void agregarEstado(String nombre) {
-        estados.putIfAbsent(nombre, new Estado(nombre));
-    }
-
-    void definirTransicion(String origen, String simbolo, String destino) {
-        estados.get(origen).agregarTransicion(simbolo, destino);
-        alfabeto.add(simbolo);
-    }
-}
 
 public class AFDMinimizado extends JFrame {
     private JTextField estadoInicialField;
@@ -47,13 +15,15 @@ public class AFDMinimizado extends JFrame {
     private JComboBox<String> simboloBox;
     private JComboBox<String> estadoDestinoBox;
     private JTextArea resultadoArea;
+    private JTable particionesTable;
+    private DefaultTableModel particionesTableModel;
     private Automata automata;
     private DefaultListModel<String> transicionesListModel;
 
     public AFDMinimizado() {
         automata = new Automata();
         setTitle("Minimizador de AFD");
-        setSize(650, 650);
+        setSize(900, 750);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
 
@@ -83,12 +53,7 @@ public class AFDMinimizado extends JFrame {
 
         // Botón para cargar estados y alfabeto en las listas desplegables
         JButton aceptarButton = new JButton("Aceptar");
-        aceptarButton.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                cargarEstadosYAlfabeto();
-            }
-        });
+        aceptarButton.addActionListener(e -> cargarEstadosYAlfabeto());
         inputPanel.add(aceptarButton);
 
         add(inputPanel, BorderLayout.NORTH);
@@ -116,40 +81,48 @@ public class AFDMinimizado extends JFrame {
         JScrollPane transicionesScroll = new JScrollPane(transicionesList);
         transicionesScroll.setPreferredSize(new Dimension(550, 100));
 
-        // Botón para minimizar y mostrar resultados
+        // Botones para minimizar
         JButton minimizarButton = new JButton("Minimizar AFD");
-        minimizarButton.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                minimizarAutomata();
-            }
-        });
+        minimizarButton.addActionListener(e -> minimizarAutomata());
+
+        JButton pasoAPasoButton = new JButton("Minimización Paso a Paso");
+        pasoAPasoButton.addActionListener(e -> minimizacionPasoAPaso());
 
         JPanel transicionesPanel = new JPanel(new BorderLayout());
         transicionesPanel.add(transicionPanel, BorderLayout.NORTH);
         transicionesPanel.add(transicionesScroll, BorderLayout.CENTER);
-        transicionesPanel.add(minimizarButton, BorderLayout.SOUTH);
+
+        JPanel botonesPanel = new JPanel();
+        botonesPanel.add(minimizarButton);
+        botonesPanel.add(pasoAPasoButton);
+        transicionesPanel.add(botonesPanel, BorderLayout.SOUTH);
 
         add(transicionesPanel, BorderLayout.CENTER);
 
-        // Área de resultado
+        // Tabla para visualización
+        particionesTableModel = new DefaultTableModel(new Object[]{"Iteración", "Partición", "Estados", "Evaluación"}, 0);
+        particionesTable = new JTable(particionesTableModel);
+
+        JScrollPane particionesScroll = new JScrollPane(particionesTable);
+        particionesScroll.setBorder(BorderFactory.createTitledBorder("Particiones y Evaluaciones Paso a Paso"));
+
+        add(particionesScroll, BorderLayout.EAST);
+
+        // Área de resultados finales
         resultadoArea = new JTextArea(10, 50);
         resultadoArea.setEditable(false);
         JScrollPane resultadoScroll = new JScrollPane(resultadoArea);
         add(resultadoScroll, BorderLayout.SOUTH);
 
         // Acción para agregar una transición
-        agregarTransicionButton.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                String origen = (String) estadoOrigenBox.getSelectedItem();
-                String simbolo = (String) simboloBox.getSelectedItem();
-                String destino = (String) estadoDestinoBox.getSelectedItem();
+        agregarTransicionButton.addActionListener(e -> {
+            String origen = (String) estadoOrigenBox.getSelectedItem();
+            String simbolo = (String) simboloBox.getSelectedItem();
+            String destino = (String) estadoDestinoBox.getSelectedItem();
 
-                if (origen != null && simbolo != null && destino != null) {
-                    automata.definirTransicion(origen, simbolo, destino);
-                    transicionesListModel.addElement(origen + "," + simbolo + " -> " + destino);
-                }
+            if (origen != null && simbolo != null && destino != null) {
+                automata.definirTransicion(origen, simbolo, destino);
+                transicionesListModel.addElement(origen + "," + simbolo + " -> " + destino);
             }
         });
     }
@@ -170,48 +143,78 @@ public class AFDMinimizado extends JFrame {
     }
 
     private void minimizarAutomata() {
-        // Leer y configurar el estado inicial, estados de aceptación, y alfabeto sin reiniciar `automata`.
         automata.estadoInicial = estadoInicialField.getText().trim();
         automata.estadosAceptacion.clear();
         automata.estadosAceptacion.addAll(Arrays.asList(estadosAceptacionField.getText().trim().split(" ")));
-    
-        // Minimizar el autómata
+
         Automata minimizado = minimizarAutomata(automata);
-    
-        // Mostrar resultados en la interfaz gráfica
         mostrarAutomata(minimizado);
     }
-    
 
-    private Automata minimizarAutomata(Automata automata) {
+    private void minimizacionPasoAPaso() {
+        automata.estadoInicial = estadoInicialField.getText().trim();
+        automata.estadosAceptacion.clear();
+        automata.estadosAceptacion.addAll(Arrays.asList(estadosAceptacionField.getText().trim().split(" ")));
+
+        List<IteracionPaso> pasos = obtenerPasosMinimizacionDetallados(automata);
+        particionesTableModel.setRowCount(0); // Limpia la tabla
+
+        for (IteracionPaso paso : pasos) {
+            for (Map.Entry<String, List<String>> particion : paso.particiones.entrySet()) {
+                particionesTableModel.addRow(new Object[]{
+                        paso.iteracion,
+                        particion.getKey(),
+                        particion.getValue(),
+                        paso.evaluaciones.get(particion.getKey())
+                });
+            }
+        }
+    }
+
+    private List<IteracionPaso> obtenerPasosMinimizacionDetallados(Automata automata) {
+        List<IteracionPaso> pasos = new ArrayList<>();
         List<List<String>> particiones = inicializarParticiones(automata);
         boolean cambio;
+        int iteracion = 1;
+
+        // Agregar primera partición inicial
+        IteracionPaso inicial = new IteracionPaso(iteracion++);
+        inicial.particiones.putAll(asignarNombresAParticiones(particiones));
+        for (Map.Entry<String, List<String>> entry : inicial.particiones.entrySet()) {
+            inicial.evaluaciones.put(entry.getKey(), "Partición inicial: " + entry.getValue());
+        }
+        pasos.add(inicial);
 
         do {
+            IteracionPaso paso = new IteracionPaso(iteracion);
             cambio = false;
             List<List<String>> nuevasParticiones = new ArrayList<>();
+            Map<String, List<String>> particionConNombres = asignarNombresAParticiones(particiones);
 
             for (List<String> grupo : particiones) {
-                List<List<String>> subdividido = dividirGrupo(grupo, automata, particiones);
+                List<List<String>> subdividido = dividirGrupoConEvaluacion(grupo, automata, particiones, paso.evaluaciones);
                 nuevasParticiones.addAll(subdividido);
                 if (subdividido.size() > 1) cambio = true;
             }
+
             particiones = nuevasParticiones;
+            paso.particiones.putAll(asignarNombresAParticiones(particiones));
+            pasos.add(paso);
+            iteracion++;
         } while (cambio);
 
-        return construirAutomataMinimizado(automata, particiones);
+        return pasos;
     }
 
-    private List<List<String>> inicializarParticiones(Automata automata) {
-        List<List<String>> particiones = new ArrayList<>();
-        List<String> noAceptadores = new ArrayList<>(automata.estados.keySet());
-        noAceptadores.removeAll(automata.estadosAceptacion);
-        particiones.add(new ArrayList<>(automata.estadosAceptacion));
-        particiones.add(noAceptadores);
-        return particiones;
+    private Map<String, List<String>> asignarNombresAParticiones(List<List<String>> particiones) {
+        Map<String, List<String>> particionConNombres = new LinkedHashMap<>();
+        for (int i = 0; i < particiones.size(); i++) {
+            particionConNombres.put("S" + i, particiones.get(i));
+        }
+        return particionConNombres;
     }
 
-    private List<List<String>> dividirGrupo(List<String> grupo, Automata automata, List<List<String>> particiones) {
+    private List<List<String>> dividirGrupoConEvaluacion(List<String> grupo, Automata automata, List<List<String>> particiones, Map<String, String> evaluaciones) {
         List<List<String>> resultado = new ArrayList<>();
         for (String estado : grupo) {
             boolean encontrado = false;
@@ -231,6 +234,15 @@ public class AFDMinimizado extends JFrame {
         return resultado;
     }
 
+    private List<List<String>> inicializarParticiones(Automata automata) {
+        List<List<String>> particiones = new ArrayList<>();
+        List<String> noAceptadores = new ArrayList<>(automata.estados.keySet());
+        noAceptadores.removeAll(automata.estadosAceptacion);
+        particiones.add(new ArrayList<>(automata.estadosAceptacion));
+        particiones.add(noAceptadores);
+        return particiones;
+    }
+
     private boolean equivalente(String estado1, String estado2, Automata automata, List<List<String>> particiones) {
         for (String simbolo : automata.alfabeto) {
             String destino1 = automata.estados.get(estado1).obtenerTransicion(simbolo);
@@ -247,6 +259,25 @@ public class AFDMinimizado extends JFrame {
             if (particion.contains(estado)) return particion;
         }
         return new ArrayList<>();
+    }
+
+    private Automata minimizarAutomata(Automata automata) {
+        List<List<String>> particiones = inicializarParticiones(automata);
+        boolean cambio;
+
+        do {
+            cambio = false;
+            List<List<String>> nuevasParticiones = new ArrayList<>();
+
+            for (List<String> grupo : particiones) {
+                List<List<String>> subdividido = dividirGrupoConEvaluacion(grupo, automata, particiones, new LinkedHashMap<>());
+                nuevasParticiones.addAll(subdividido);
+                if (subdividido.size() > 1) cambio = true;
+            }
+            particiones = nuevasParticiones;
+        } while (cambio);
+
+        return construirAutomataMinimizado(automata, particiones);
     }
 
     private Automata construirAutomataMinimizado(Automata automata, List<List<String>> particiones) {
@@ -292,6 +323,18 @@ public class AFDMinimizado extends JFrame {
             }
         }
         resultadoArea.setText(resultado.toString());
+    }
+
+    private class IteracionPaso {
+        int iteracion;
+        Map<String, List<String>> particiones;
+        Map<String, String> evaluaciones;
+
+        IteracionPaso(int iteracion) {
+            this.iteracion = iteracion;
+            this.particiones = new LinkedHashMap<>();
+            this.evaluaciones = new LinkedHashMap<>();
+        }
     }
 
     public static void main(String[] args) {
